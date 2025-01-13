@@ -25,10 +25,10 @@ const (
 
 // VirtualNodeReconciler manages virtual nodes and their leases
 type VirtualNodeReconciler struct {
-	client        client.Client
-	leaseDuration int32
-	renewInterval time.Duration
-	clock         clock.Clock
+	Client        client.Client
+	LeaseDuration int32
+	RenewInterval time.Duration
+	Clock         clock.Clock
 }
 
 // Reconcile ensures a virtual node is created and has an active lease.
@@ -37,7 +37,7 @@ func (r *VirtualNodeReconciler) Reconcile(ctx context.Context, req reconcile.Req
 
 	// Fetch the node object
 	node := &corev1.Node{}
-	if err := r.client.Get(ctx, req.NamespacedName, node); err != nil {
+	if err := r.Client.Get(ctx, req.NamespacedName, node); err != nil {
 		if client.IgnoreNotFound(err) != nil {
 			return reconcile.Result{}, err
 		}
@@ -59,7 +59,7 @@ func (r *VirtualNodeReconciler) Reconcile(ctx context.Context, req reconcile.Req
 	}
 
 	logger.Info("Successfully reconciled virtual node", "nodeName", node.Name)
-	return reconcile.Result{RequeueAfter: r.renewInterval}, nil
+	return reconcile.Result{RequeueAfter: r.RenewInterval}, nil
 }
 
 // ensureLease ensures a lease is created and periodically renewed for the virtual node
@@ -67,7 +67,7 @@ func (r *VirtualNodeReconciler) ensureLease(ctx context.Context, node *corev1.No
 	logger := log.FromContext(ctx)
 
 	lease := &coordinationv1.Lease{}
-	err := r.client.Get(ctx, client.ObjectKey{Name: node.Name, Namespace: corev1.NamespaceNodeLease}, lease)
+	err := r.Client.Get(ctx, client.ObjectKey{Name: node.Name, Namespace: corev1.NamespaceNodeLease}, lease)
 	if apierrors.IsNotFound(err) {
 		// Lease does not exist, create a new one
 		lease = &coordinationv1.Lease{
@@ -85,11 +85,11 @@ func (r *VirtualNodeReconciler) ensureLease(ctx context.Context, node *corev1.No
 			},
 			Spec: coordinationv1.LeaseSpec{
 				HolderIdentity:       &node.Name,
-				LeaseDurationSeconds: &r.leaseDuration,
-				RenewTime:            &metav1.MicroTime{Time: r.clock.Now()},
+				LeaseDurationSeconds: &r.LeaseDuration,
+				RenewTime:            &metav1.MicroTime{Time: r.Clock.Now()},
 			},
 		}
-		if err := r.client.Create(ctx, lease); err != nil {
+		if err := r.Client.Create(ctx, lease); err != nil {
 			return fmt.Errorf("failed to create lease: %w", err)
 		}
 		logger.Info("Successfully created lease", "nodeName", node.Name)
@@ -98,8 +98,8 @@ func (r *VirtualNodeReconciler) ensureLease(ctx context.Context, node *corev1.No
 	}
 
 	// Update the lease to renew it
-	lease.Spec.RenewTime = &metav1.MicroTime{Time: r.clock.Now()}
-	if err := r.client.Update(ctx, lease); err != nil {
+	lease.Spec.RenewTime = &metav1.MicroTime{Time: r.Clock.Now()}
+	if err := r.Client.Update(ctx, lease); err != nil {
 		return fmt.Errorf("failed to update lease: %w", err)
 	}
 
@@ -110,6 +110,7 @@ func (r *VirtualNodeReconciler) ensureLease(ctx context.Context, node *corev1.No
 // SetupWithManager sets up the controller with the Manager and watches for Node resources.
 func (r *VirtualNodeReconciler) SetupWithManager(mgr manager.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("virtual-node-controller").
 		For(&corev1.Node{}).
 		WithEventFilter(predicate.NewPredicateFuncs(func(obj client.Object) bool {
 			node, ok := obj.(*corev1.Node)

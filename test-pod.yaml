@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: virtual-node-direct-schedule
+spec:
+  nodeName: virtual-node-example
+  containers:
+    - name: test-container
+      image: busybox
+      command: ["sh", "-c", "echo Hello from the virtual node! && sleep 3600"]
